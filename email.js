@@ -15,14 +15,19 @@ const createTransporter = () => {
     auth: {
       user: process.env.SMTP_USER, // Email адрес для отправки
       pass: process.env.SMTP_PASS  // Пароль приложения
-    }
+    },
+    // Увеличенные таймауты для Render и других облачных платформ
+    connectionTimeout: 60000, // 60 секунд для установки соединения
+    greetingTimeout: 30000, // 30 секунд для получения приветствия
+    socketTimeout: 60000, // 60 секунд для операций сокета
+    // Для порта 587 (STARTTLS)
+    requireTLS: port === 587
   }
   
-  // Для порта 465 (SSL) или если явно указано
-  if (isSecure) {
-    config.tls = {
-      rejectUnauthorized: false // Для некоторых провайдеров нужно отключить проверку сертификата
-    }
+  // TLS настройки
+  config.tls = {
+    rejectUnauthorized: false, // Для некоторых провайдеров нужно отключить проверку сертификата
+    minVersion: 'TLSv1.2'
   }
   
   return nodemailer.createTransport(config)
@@ -64,11 +69,29 @@ Email: ${email}
   }
 
   try {
+    // Проверяем соединение перед отправкой (опционально, для отладки)
+    if (process.env.NODE_ENV === 'development') {
+      await transporter.verify()
+      console.log('SMTP server connection verified')
+    }
+    
     const info = await transporter.sendMail(mailOptions)
     console.log('Email sent successfully:', info.messageId)
     return info
   } catch (error) {
-    console.error('Error sending email:', error)
+    console.error('Error sending email:', error.message)
+    if (error.code) {
+      console.error('Error code:', error.code)
+    }
+    if (error.command) {
+      console.error('Failed command:', error.command)
+    }
+    
+    // Более понятное сообщение об ошибке
+    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
+      throw new Error(`Не удалось подключиться к SMTP серверу ${process.env.SMTP_HOST}:${process.env.SMTP_PORT}. Проверьте настройки SMTP и доступность порта на Render.`)
+    }
+    
     throw error
   }
 }
