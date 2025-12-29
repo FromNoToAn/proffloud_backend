@@ -1,98 +1,95 @@
-import nodemailer from 'nodemailer'
+import { google } from 'googleapis'
 import dotenv from 'dotenv'
 
 dotenv.config()
 
-// Create transporter for email sending
-const createTransporter = () => {
-  const port = parseInt(process.env.SMTP_PORT || '587')
-  const isSecure = process.env.SMTP_SECURE === 'true' || port === 465
-  
-  const config = {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: port,
-    secure: isSecure, // true for 465, false for other ports
-    auth: {
-      user: process.env.SMTP_USER, // Email адрес для отправки
-      pass: process.env.SMTP_PASS  // Пароль приложения
-    },
-    // Увеличенные таймауты для Render и других облачных платформ
-    connectionTimeout: 60000, // 60 секунд для установки соединения
-    greetingTimeout: 30000, // 30 секунд для получения приветствия
-    socketTimeout: 60000, // 60 секунд для операций сокета
-    // Для порта 587 (STARTTLS)
-    requireTLS: port === 587
-  }
-  
-  // TLS настройки
-  config.tls = {
-    rejectUnauthorized: false, // Для некоторых провайдеров нужно отключить проверку сертификата
-    minVersion: 'TLSv1.2'
-  }
-  
-  return nodemailer.createTransport(config)
-}
-
-// Send form submission email
+// Gmail API отправка email
 export const sendFormEmail = async (name, email) => {
-  const transporter = createTransporter()
+  // Проверка обязательных переменных окружения
+  if (!process.env.GMAIL_CLIENT_ID || !process.env.GMAIL_CLIENT_SECRET) {
+    throw new Error('GMAIL_CLIENT_ID и GMAIL_CLIENT_SECRET должны быть настроены в .env файле')
+  }
 
-  // Validate required environment variables
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    throw new Error('SMTP credentials are not configured. Please check your .env file.')
+  if (!process.env.GMAIL_REFRESH_TOKEN) {
+    throw new Error('GMAIL_REFRESH_TOKEN должен быть настроен в .env файле')
+  }
+
+  if (!process.env.GMAIL_USER) {
+    throw new Error('GMAIL_USER должен быть настроен в .env файле (ваш Gmail адрес)')
   }
 
   if (!process.env.RECIPIENT_EMAIL) {
-    throw new Error('RECIPIENT_EMAIL is not configured. Please check your .env file.')
-  }
-
-  // Email content
-  const mailOptions = {
-    from: process.env.SMTP_USER,
-    to: process.env.RECIPIENT_EMAIL,
-    subject: 'Заявка с сайта',
-    html: `
-      <h2>Новая заявка с сайта ProffLoud</h2>
-      <p><strong>Имя:</strong> ${name}</p>
-      <p><strong>Email:</strong> ${email}</p>
-      <hr>
-      <p><em>Дата отправки: ${new Date().toLocaleString('ru-RU')}</em></p>
-    `,
-    text: `
-Новая заявка с сайта ProffLoud
-
-Имя: ${name}
-Email: ${email}
-
-Дата отправки: ${new Date().toLocaleString('ru-RU')}
-    `
+    throw new Error('RECIPIENT_EMAIL должно быть настроено в .env файле')
   }
 
   try {
-    // Проверяем соединение перед отправкой (опционально, для отладки)
-    if (process.env.NODE_ENV === 'development') {
-      await transporter.verify()
-      console.log('SMTP server connection verified')
+    // Настройка OAuth2 клиента
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      'urn:ietf:wg:oauth:2.0:oob' // Redirect URI для desktop приложений
+    )
+
+    // Устанавливаем refresh token
+    oauth2Client.setCredentials({
+      refresh_token: process.env.GMAIL_REFRESH_TOKEN
+    })
+
+    // Получаем access token
+    const accessToken = await oauth2Client.getAccessToken()
+
+    if (!accessToken.token) {
+      throw new Error('Не удалось получить access token. Проверьте GMAIL_REFRESH_TOKEN.')
     }
-    
-    const info = await transporter.sendMail(mailOptions)
-    console.log('Email sent successfully:', info.messageId)
-    return info
+
+    // Создаем Gmail API клиент
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+
+    // Подготавливаем HTML содержимое письма
+    const htmlBody = `<h2>Новая заявка с сайта ProffLoud</h2>
+<p><strong>Имя:</strong> ${name}</p>
+<p><strong>Email:</strong> ${email}</p>
+<hr>
+<p><em>Дата отправки: ${new Date().toLocaleString('ru-RU')}</em></p>`
+
+    // Кодируем subject в base64 для правильной поддержки кириллицы
+    const subject = 'Заявка с сайта ProffLoud'
+    const encodedSubject = `=?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`
+
+    // Подготавливаем email сообщение в формате RFC 2822
+    const emailContent = [
+      `From: ${process.env.GMAIL_USER}`,
+      `To: ${process.env.RECIPIENT_EMAIL}`,
+      `Subject: ${encodedSubject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/html; charset=UTF-8`,
+      `Content-Transfer-Encoding: 8bit`,
+      ``,
+      htmlBody
+    ].join('\r\n')
+
+    // Кодируем сообщение в base64url формат (требуется Gmail API)
+    const encodedMessage = Buffer.from(emailContent)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+
+    // Отправляем email через Gmail API
+    const response = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage
+      }
+    })
+
+    console.log('Email sent successfully via Gmail API:', response.data.id)
+    return response.data
   } catch (error) {
-    console.error('Error sending email:', error.message)
-    if (error.code) {
-      console.error('Error code:', error.code)
+    console.error('Error sending email via Gmail API:', error.message)
+    if (error.response) {
+      console.error('Gmail API error response:', error.response.data)
     }
-    if (error.command) {
-      console.error('Failed command:', error.command)
-    }
-    
-    // Более понятное сообщение об ошибке
-    if (error.code === 'ETIMEDOUT' || error.code === 'ECONNREFUSED') {
-      throw new Error(`Не удалось подключиться к SMTP серверу ${process.env.SMTP_HOST}:${process.env.SMTP_PORT}. Проверьте настройки SMTP и доступность порта на Render.`)
-    }
-    
     throw error
   }
 }
-
