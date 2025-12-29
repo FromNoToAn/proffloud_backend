@@ -17,6 +17,7 @@ const corsOptions = {
     // Разрешенные домены
     const allowedOrigins = [
       'http://localhost:5173', // Vite dev server
+      'http://localhost:4173', // Vite preview server
       'http://localhost:3000', // Альтернативный dev порт
       'https://proffloud.ru',
       'http://proffloud.ru'
@@ -28,7 +29,9 @@ const corsOptions = {
       callback(new Error('Not allowed by CORS'))
     }
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }
 
 app.use(cors(corsOptions))
@@ -78,14 +81,8 @@ app.post('/api/submit-form', async (req, res) => {
   }
 })
 
-// Для Vercel нужно экспортировать app, а не запускать сервер
-// При локальной разработке запускаем сервер как обычно
-if (process.env.VERCEL !== '1') {
-  app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`)
-  })
-}
-
-// Экспортируем для Vercel
-export default app
+// Запускаем сервер (работает как локально, так и на Render)
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`)
+})
 

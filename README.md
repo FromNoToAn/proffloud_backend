@@ -49,24 +49,28 @@ npm start
 
 Бекенд настроен для приема запросов со следующих доменов:
 - `http://localhost:5173` (Vite dev server)
+- `http://localhost:4173` (Vite preview server)
 - `http://localhost:3000` (альтернативный dev порт)
 - `https://proffloud.ru`
 - `http://proffloud.ru`
 
 Если нужно добавить другие домены, отредактируйте `allowedOrigins` в `server.js`.
 
-## Деплой на Vercel
+## Деплой на Render
 
-1. Убедитесь, что в корне проекта есть `vercel.json`
-2. В настройках проекта Vercel добавьте переменные окружения из `.env`:
-   - `SMTP_HOST`
-   - `SMTP_PORT`
-   - `SMTP_SECURE`
-   - `SMTP_USER`
-   - `SMTP_PASS`
-   - `RECIPIENT_EMAIL`
-3. После деплоя получите URL вашего бекенда (например, `https://proffloud-backend.vercel.app`)
-4. Используйте этот URL в `.env.production` файле фронтенда
+1. Создайте новый Web Service на Render и подключите репозиторий с бекендом
+2. В настройках сервиса укажите:
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+3. В разделе Environment Variables добавьте переменные окружения:
+   - `SMTP_HOST` (например, `smtp.masterhost.ru`)
+   - `SMTP_PORT` (например, `465`)
+   - `SMTP_SECURE` (например, `true`)
+   - `SMTP_USER` (ваш email)
+   - `SMTP_PASS` (пароль приложения)
+   - `RECIPIENT_EMAIL` (куда будут приходить заявки)
+4. После деплоя получите URL вашего бекенда (например, `https://proffloud-backend.onrender.com`)
+5. Используйте этот URL в `.env.production` файле фронтенда
 
 ## API Endpoints
 
